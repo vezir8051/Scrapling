@@ -265,6 +265,8 @@ def fetch_rentals(
     solve_cloudflare: bool = True,
     timeout: int = 60000,
     debug_dump: str | None = None,
+    disable_resources: bool = True,
+    block_ads: bool = True,
 ) -> list[dict]:
     """Scrape Homegate rental search results.
 
@@ -279,6 +281,10 @@ def fetch_rentals(
     :param timeout: Per-operation timeout in milliseconds.
     :param debug_dump: If set, write the raw ``__INITIAL_STATE__`` of the first
         page to this file path for inspecting/mapping fields.
+    :param disable_resources: Skip images/fonts/media/etc. (default True). The
+        listing JSON does not need them, and skipping cuts proxy bandwidth/cost.
+    :param block_ads: Block known ad/tracker domains (default True), also saving
+        bandwidth.
     :return: A list of flat listing dicts (JSON-serializable).
     """
     results: list[dict] = []
@@ -296,6 +302,10 @@ def fetch_rentals(
                 timezone_id=_TIMEZONE,
                 google_search=True,
                 timeout=timeout,
+                # Bandwidth savers: the listing JSON lives in the HTML/script, so
+                # skipping images/fonts/media/ads keeps proxy data usage (and cost) low.
+                disable_resources=disable_resources,
+                block_ads=block_ads,
             )
         except Exception as exc:  # network / browser failure -> skip this page
             print(f"[homegate] page {page}: fetch failed: {exc}", file=sys.stderr)
