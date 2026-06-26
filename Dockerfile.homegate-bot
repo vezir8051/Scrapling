@@ -1,0 +1,11 @@
+# Homegate alert bot — deployable on Railway or any Docker host.
+# Based on the official Scrapling image, which ships all browsers + deps,
+# so no `scrapling install` / browser download is needed at build time.
+FROM pyd4vinci/scrapling:latest
+
+WORKDIR /app
+COPY homegate_scraper.py homegate_bot.py /app/
+
+# All configuration is read from environment variables at runtime
+# (set them in Railway's "Variables" tab). See homegate_bot.py for the list.
+CMD ["python", "homegate_bot.py"]

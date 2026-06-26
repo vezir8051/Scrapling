@@ -340,6 +340,47 @@ def fetch_rentals(
     return results
 
 
+def filter_listings(
+    listings: list[dict],
+    *,
+    max_price: float | None = None,
+    min_price: float | None = None,
+    min_rooms: float | None = None,
+    max_rooms: float | None = None,
+    min_space: float | None = None,
+    max_space: float | None = None,
+    locality: str | None = None,
+) -> list[dict]:
+    """Filter normalized listings by price, rooms, living space and locality.
+
+    A listing whose relevant field is missing (``None``) is excluded when a
+    bound for that field is given, so filters fail closed.
+    """
+
+    def keep(l: dict) -> bool:
+        price = l.get("price")
+        if max_price is not None and (price is None or price > max_price):
+            return False
+        if min_price is not None and (price is None or price < min_price):
+            return False
+        rooms = l.get("rooms")
+        if min_rooms is not None and (rooms is None or rooms < min_rooms):
+            return False
+        if max_rooms is not None and (rooms is None or rooms > max_rooms):
+            return False
+        space = l.get("living_space")
+        if min_space is not None and (space is None or space < min_space):
+            return False
+        if max_space is not None and (space is None or space > max_space):
+            return False
+        if locality:
+            if locality.lower() not in str(l.get("locality") or "").lower():
+                return False
+        return True
+
+    return [l for l in listings if keep(l)]
+
+
 def fetch_detail(
     listing_url_or_id: str,
     proxy: str | dict | None = None,
