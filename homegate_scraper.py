@@ -127,16 +127,22 @@ def _first(obj: Any, *paths: str) -> Any:
     return None
 
 
+_LISTING_KEYS = ("address", "prices", "characteristics")
+
+
 def _looks_like_listing(d: Any) -> bool:
-    """Heuristic: does this dict look like a Homegate listing record?"""
+    """Heuristic: does this dict look like a Homegate listing record?
+
+    Search result items have the shape ``{"id": ..., "listing": {...}}`` with the
+    real data under ``listing``; detail records carry the data directly. Accept
+    either shape.
+    """
     if not isinstance(d, dict):
         return False
-    inner = d.get("listing", d)
-    if not isinstance(inner, dict):
-        return False
-    return "id" in inner and (
-        "address" in inner or "prices" in inner or "characteristics" in inner
-    )
+    inner = d.get("listing")
+    if isinstance(inner, dict) and any(k in inner for k in _LISTING_KEYS):
+        return True
+    return "id" in d and any(k in d for k in _LISTING_KEYS)
 
 
 def _find_listings(state: Any) -> list[dict]:
@@ -196,10 +202,29 @@ def _normalize(record: dict) -> dict:
     if not isinstance(listing, dict):
         listing = record
 
-    listing_id = _first(listing, "id")
+    # On search pages the result item carries `id` at the top level, while
+    # address/characteristics/prices live under the nested `listing` object.
+    listing_id = _first(record, "id") or _first(listing, "id")
+    rooms = _first(listing, "characteristics.numberOfRooms")
+    living_space = _first(
+        listing, "characteristics.livingSpace", "characteristics.totalFloorSpace"
+    )
+    locality = _first(listing, "address.locality", "address.region")
+
     title = _localization_value(listing, "text.title", "text.description") or _first(
         listing, "title"
     )
+    if not title:
+        # Result items often have no explicit title; build a readable one.
+        parts = []
+        if rooms is not None:
+            parts.append(f"{rooms} Zi.")
+        if living_space is not None:
+            parts.append(f"{living_space} m²")
+        if locality:
+            parts.append(str(locality))
+        title = ", ".join(parts) or None
+
     image = _localization_value(
         listing, "attachments.0.url", "attachments.0.file"
     )
@@ -219,11 +244,9 @@ def _normalize(record: dict) -> dict:
             "prices.buy.price",
         ),
         "currency": _first(listing, "prices.currency", "prices.rent.currency"),
-        "rooms": _first(listing, "characteristics.numberOfRooms"),
-        "living_space": _first(
-            listing, "characteristics.livingSpace", "characteristics.totalFloorSpace"
-        ),
-        "locality": _first(listing, "address.locality", "address.region"),
+        "rooms": rooms,
+        "living_space": living_space,
+        "locality": locality,
         "postal_code": _first(listing, "address.postalCode"),
         "street": _first(listing, "address.street"),
         "url": url,
@@ -354,9 +377,12 @@ def fetch_detail(
     if not state:
         return {"url": url, "error": "no state found (blocked, empty, or changed)"}
 
-    # Detail listings live somewhere in the Pinia store; reuse the listing finder.
-    found = _find_listings(state)
-    listing = (found[0].get("listing", found[0]) if found else state)
+    # Pinia detail state nests the record at state["listing"]["listing"]; fall
+    # back to the recursive finder if the shape differs.
+    listing = _dig(state, "listing.listing")
+    if not isinstance(listing, dict):
+        found = _find_listings(state)
+        listing = found[0].get("listing", found[0]) if found else state
 
     return {
         "url": url,
